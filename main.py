@@ -118,6 +118,7 @@ class SecretaryDaemon:
             config.get("ledger_file", "~/.config/secretary/processed.json")
         )
         self._pending: dict[str, asyncio.Task] = {}
+        self._discord_task: asyncio.Task | None = None
         self._stopped = False
 
         self.event_listener = EventListener(
@@ -156,6 +157,19 @@ class SecretaryDaemon:
             self.project_manager.refresh()
         except Exception:
             logger.debug("Initial project refresh failed", exc_info=True)
+
+        # Start Discord bot (best-effort, non-blocking)
+        self._discord_task = None
+        discord_cfg = self.config.get("discord", {})
+        if discord_cfg.get("token"):
+            try:
+                from discord_bot import run_bot
+                self._discord_task = asyncio.create_task(
+                    run_bot(self.config, self.opencode, self.memory)
+                )
+                logger.info("Discord bot started in background")
+            except Exception:
+                logger.debug("Discord bot failed to start", exc_info=True)
 
         # Start event listener (blocks until stopped)
         logger.info("Secretary daemon ready. Listening for events...")

@@ -1,6 +1,13 @@
+discord:
+  token: ''          # Set DISCORD_BOT_TOKEN env var or paste token here
+  allowed_user_ids: []  # Empty = allow all; add your Discord user ID to restrict
+github:
+  owner: '0124212'    # Default GitHub owner for repo operations
+megamemory:
+  db_path: /root/.megamemory/knowledge.db
 user_id: asher
 opencode:
-  url: http://localhost:4097
+  url: http://192.168.68.59:4098
   token: ''
   token_env: ''
   username: ak

@@ -80,19 +80,25 @@ class TestOpencodeClient(unittest.TestCase):
 
 class TestMemoryShapes(unittest.TestCase):
     def test_calls(self):
+        import tempfile
         from memory import MemoryStore
 
-        ms = MemoryStore({"mem0": {}, "user_id": "u"})
-        ms.add("test memory", metadata={"type": "test"})
-        results = ms.search("test")
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["memory"], "test memory")
-        self.assertEqual(results[0]["user_id"], "u")
-        all_mems = ms.get_all(limit=50)
-        self.assertEqual(len(all_mems), 1)
-        ms.update(results[0]["id"], "updated memory")
-        updated = ms.get(results[0]["id"])
-        self.assertEqual(updated["memory"], "updated memory")
+        with tempfile.TemporaryDirectory() as tmp:
+            store_path = str(Path(tmp) / "memory.json")
+            ms = MemoryStore({"mem0": {"store_path": store_path}, "user_id": "u"})
+            # Override megamemory connection to avoid needing the real DB in tests
+            ms._mm_conn = None
+
+            ms.add("test memory", metadata={"type": "test"})
+            results = ms.search("test")
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["memory"], "test memory")
+            self.assertEqual(results[0]["user_id"], "u")
+            all_mems = ms.get_all(limit=50)
+            self.assertEqual(len(all_mems), 1)
+            ms.update(results[0]["id"], "updated memory")
+            updated = ms.get(results[0]["id"])
+            self.assertEqual(updated["memory"], "updated memory")
 
 
 class TestTaskFallback(unittest.TestCase):
