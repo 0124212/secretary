@@ -1,0 +1,7 @@
+# Secretary daemon dependencies (pinned — mem0 broke its API on a minor bump once)
+mem0ai==2.0.20
+httpx==0.28.1
+apscheduler==3.11.3
+pyyaml==6.0.3
+pydantic==2.13.5
+python-dateutil==2.9.0.post0

@@ -1,0 +1,57 @@
+user_id: asher
+opencode:
+  url: http://localhost:4097
+  token: ''
+  token_env: ''
+  username: ak
+  password: ''
+  password_env: OPENCODE_SERVER_PASSWORD
+  secretary_session_title: secretary
+mem0:
+  qdrant_host: localhost
+  qdrant_port: 6333
+  collection_name: secretary_memory
+todo_for_ai:
+  base_url: http://localhost:50110/todo-for-ai/api/v1
+  api_token: ''
+  project_name: secretary
+  project_id: null
+  fallback_file: ~/.config/secretary/tasks.json
+ledger_file: ~/.config/secretary/processed.json
+memos:
+  url: http://localhost:5230
+  token: ''
+scheduler:
+  timezone: UTC
+  stale_task_check: 0 * * * *
+  morning_briefing: 0 9 * * *
+  evening_summary: 0 18 * * *
+  weekly_review: 0 10 * * 0
+briefing:
+  store_in_memos: true
+  memos_visibility: PRIVATE
+  webhook_url: ''
+summarizer:
+  max_tokens: 4096
+  model: ''
+  idle_debounce_seconds: 300
+  min_messages: 2
+  max_transcript_chars: 20000
+logging:
+  level: INFO
+  file: /var/log/secretary.log
+  max_bytes_mb: 5
+  backup_count: 3
+projects:
+  vikunja:
+    url: https://vikunja.junilab.xyz/api/v1
+    token: tk_faee77c1ec967a88817971d8022378fac84ff518
+    timeout_seconds: 15
+  max_projects: 50
+  health_rules:
+    max_open_tasks: 20
+    overdue_stale_days: 14
+    max_inactive_days: 30
+  max_actions_per_day: 10
+  ignore_projects: []
+  poll_interval: 300
