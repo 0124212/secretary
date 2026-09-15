@@ -26,10 +26,10 @@ class SecretaryScheduler:
         sched_cfg = config.get("scheduler", {})
         self.schedules = {
             "stale_task_check": sched_cfg.get("stale_task_check", "0 * * * *"),
+            "cleanup_sessions": sched_cfg.get("cleanup_sessions", "0 3 * * *"),
             "morning_briefing": sched_cfg.get("morning_briefing", "0 9 * * *"),
             "evening_summary": sched_cfg.get("evening_summary", "0 18 * * *"),
             "weekly_review": sched_cfg.get("weekly_review", "0 10 * * 0"),
-
         }
         self.timezone = sched_cfg.get("timezone", "UTC")
         try:

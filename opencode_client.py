@@ -251,6 +251,19 @@ class OpenCodeClient:
             text = "[...earlier transcript truncated...]\n\n" + text[-max_chars:]
         return text
 
+    async def delete_session(self, session_id: str) -> bool:
+        """DELETE /session/:id — remove a session. Returns True on success."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.delete(
+                    self._url(f"/session/{session_id}"), headers=self._headers
+                )
+                resp.raise_for_status()
+                return True
+        except Exception:
+            logger.debug("Failed to delete session %s", session_id, exc_info=True)
+            return False
+
     async def wait_for_healthy(self, retries: int = 5, delay: float = 2.0) -> bool:
         """Poll health endpoint; True if server answers within retries."""
         for _ in range(retries):

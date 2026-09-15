@@ -1,8 +1,8 @@
 discord:
-  token: ''          # Set DISCORD_BOT_TOKEN env var or paste token here
-  allowed_user_ids: []  # Empty = allow all; add your Discord user ID to restrict
+  token: ''
+  allowed_user_ids: []
 github:
-  owner: '0124212'    # Default GitHub owner for repo operations
+  owner: '0124212'
 megamemory:
   db_path: /root/.megamemory/knowledge.db
 user_id: asher
@@ -52,7 +52,7 @@ logging:
 projects:
   vikunja:
     url: https://vikunja.junilab.xyz/api/v1
-    token: tk_faee77c1ec967a88817971d8022378fac84ff518
+    token: tk_170577ce7d57af6f0ac4280c31d7965e5587158c
     timeout_seconds: 15
   max_projects: 50
   health_rules:

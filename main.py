@@ -135,6 +135,7 @@ class SecretaryDaemon:
     def _setup_scheduler(self) -> None:
         """Register all cron jobs."""
         self.scheduler.register("stale_task_check", self._job_stale_task_check)
+        self.scheduler.register("cleanup_sessions", self._job_cleanup_sessions)
         self.scheduler.register("morning_briefing", self._job_morning_briefing)
         self.scheduler.register("evening_summary", self._job_evening_summary)
         self.scheduler.register("weekly_review", self._job_weekly_review)
@@ -405,6 +406,38 @@ class SecretaryDaemon:
             logger.info("Weekly review complete")
         except Exception:
             logger.exception("Weekly review failed")
+
+    async def _job_cleanup_sessions(self) -> None:
+        """Delete processed sessions older than 24h. Keeps active/secretary sessions."""
+        try:
+            sessions = await self.opencode.list_sessions()
+            deleted = 0
+            for s in sessions:
+                if not isinstance(s, dict):
+                    continue
+                sid = self._session_id(s)
+                if sid == "unknown" or sid == self.opencode._secretary_session_id:
+                    continue
+                if not self.ledger.is_processed(sid):
+                    continue
+                # Check age — only delete sessions older than 24h
+                created = s.get("createdAt", s.get("created_at", ""))
+                if created:
+                    from datetime import datetime, timezone
+                    try:
+                        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                        age_hours = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
+                        if age_hours < 24:
+                            continue
+                    except Exception:
+                        continue
+                if await self.opencode.delete_session(sid):
+                    deleted += 1
+                    logger.info("Cleaned up session %s", sid)
+            if deleted:
+                logger.info("Session cleanup: deleted %d old sessions", deleted)
+        except Exception:
+            logger.exception("Session cleanup failed")
 
     async def backfill(self, limit: int = 20) -> int:
         """Process up to `limit` recent unprocessed sessions. Returns count."""
