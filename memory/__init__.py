@@ -352,41 +352,40 @@ class MemoryStore:
 
         Returns the number of entries deleted.
         """
-        deleted = 0
-        checked: set[str] = set()
+        to_remove: set[str] = set()
+        # Pairwise comparison, skip pairs where either is already marked
         for i, a in enumerate(self._memories):
-            if a["id"] in checked:
+            if a["id"] in to_remove:
                 continue
-            for j in range(i + 1, len(self._memories)):
-                b = self._memories[j]
-                if b["id"] in checked:
+            for b in self._memories[i + 1:]:
+                if b["id"] in to_remove:
                     continue
                 sim = _jaccard_bigram(a.get("memory", ""), b.get("memory", ""))
                 if sim >= 0.90:
-                    # Keep the longer entry, delete the shorter
+                    # Keep the longer entry, mark the shorter for removal
                     if len(a.get("memory", "")) >= len(b.get("memory", "")):
-                        longer, shorter = a, b
+                        shorter = b
                     else:
-                        longer, shorter = b, a
-                    self._memories.remove(shorter)
-                    checked.add(shorter["id"])
-                    deleted += 1
-                    # Also clean up megamemory nodes/facts for the deleted entry
-                    if self._mm_conn:
-                        try:
-                            self._mm_conn.execute(
-                                """DELETE FROM nodes WHERE id = ?""",
-                                (f"secretary:{shorter['id']}",),
-                            )
-                            self._mm_conn.execute(
-                                """DELETE FROM facts WHERE key LIKE ?""",
-                                (f"secretary:{shorter['id']}%",),
-                            )
-                            self._mm_conn.commit()
-                        except Exception:
-                            logger.debug("compact: megamemory cleanup failed", exc_info=True)
-                    checked.add(a["id"])
-                    checked.add(b["id"])
+                        shorter = a
+                    to_remove.add(shorter["id"])
+        deleted = 0
+        for mid in to_remove:
+            self._memories = [m for m in self._memories if m["id"] != mid]
+            deleted += 1
+            # Also clean up megamemory nodes/facts for the deleted entry
+            if self._mm_conn:
+                try:
+                    self._mm_conn.execute(
+                        """DELETE FROM nodes WHERE id = ?""",
+                        (f"secretary:{mid}",),
+                    )
+                    self._mm_conn.execute(
+                        """DELETE FROM facts WHERE key LIKE ?""",
+                        (f"secretary:{mid}%",),
+                    )
+                    self._mm_conn.commit()
+                except Exception:
+                    logger.debug("compact: megamemory cleanup failed", exc_info=True)
         self._save()
         return deleted
 
