@@ -437,7 +437,7 @@ class MemoryStore:
                 return m
         return None
 
-def update(self, memory_id: str, data: str) -> dict | None:
+    def update(self, memory_id: str, data: str) -> dict | None:
         """Update a memory's content."""
         for m in self._memories:
             if m.get("id") == memory_id:
