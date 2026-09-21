@@ -14,7 +14,7 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +27,10 @@ class MemoryStore:
     """Memory backed by megamemory SQLite + local JSON fallback."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        mem0_cfg = config.get("mem0", {})
+        # Memory store path: prefer new "memory" key, fall back to "mem0" for compat
+        mem0_cfg = config.get("memory", {})
+        if not mem0_cfg:
+            mem0_cfg = config.get("mem0", {})
         self.user_id = config.get("user_id", "asher")
         store_path = mem0_cfg.get(
             "store_path",
@@ -228,6 +231,12 @@ class MemoryStore:
     ) -> dict:
         """Add a memory (fact, summary, observation). Writes to both
         local JSON and megamemory SQLite."""
+        # TTL prune: drop local entries older than 30 days
+        threshold = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        self._memories = [
+            m for m in self._memories
+            if m.get("created_at", "") >= threshold
+        ]
         if isinstance(text, list):
             text = " | ".join(
                 m.get("content", m.get("text", "")) for m in text if m
@@ -303,6 +312,19 @@ class MemoryStore:
                 m["memory"] = data
                 m["updated_at"] = datetime.now(timezone.utc).isoformat()
                 self._save()
+                # Mirror to megamemory nodes table
+                try:
+                    if self._mm_conn:
+                        self._mm_conn.execute(
+                            """UPDATE nodes
+                               SET summary = ?, updated_at = ?
+                             WHERE id = ?""",
+                            (data, datetime.now(timezone.utc).isoformat(),
+                             f"secretary:{memory_id}"),
+                        )
+                        self._mm_conn.commit()
+                except Exception:
+                    logger.debug("Megamemory mirror update failed", exc_info=True)
                 return m
         return None
 
@@ -310,6 +332,20 @@ class MemoryStore:
         """Delete a single memory."""
         self._memories = [m for m in self._memories if m.get("id") != memory_id]
         self._save()
+        # Mirror to megamemory nodes + facts tables
+        try:
+            if self._mm_conn:
+                self._mm_conn.execute(
+                    """DELETE FROM nodes WHERE id = ?""",
+                    (f"secretary:{memory_id}",),
+                )
+                self._mm_conn.execute(
+                    """DELETE FROM facts WHERE key LIKE ?""",
+                    (f"secretary:{memory_id}%",),
+                )
+                self._mm_conn.commit()
+        except Exception:
+            logger.debug("Megamemory mirror delete failed", exc_info=True)
 
     def history(self, memory_id: str) -> list[dict]:
         """Get change history (stub — local store has no versioning)."""
