@@ -14,10 +14,6 @@ opencode:
   password: ''
   password_env: OPENCODE_SERVER_PASSWORD
   secretary_session_title: secretary
-mem0:
-  qdrant_host: localhost
-  qdrant_port: 6333
-  collection_name: secretary_memory
 todo_for_ai:
   base_url: http://localhost:50110/todo-for-ai/api/v1
   api_token: ''
@@ -31,6 +27,7 @@ memos:
 scheduler:
   timezone: UTC
   stale_task_check: 0 * * * *
+  cleanup_sessions: "0 3 * * *"
   morning_briefing: 0 9 * * *
   evening_summary: 0 18 * * *
   weekly_review: 0 10 * * 0

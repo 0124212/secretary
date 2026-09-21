@@ -484,20 +484,6 @@ def check_connections(config: dict[str, Any]) -> int:
         except Exception as exc:
             report("opencode", False, str(exc)[:100])
 
-        mem0_cfg = config.get("mem0", {})
-        qh, qp = mem0_cfg.get("qdrant_host", "localhost"), mem0_cfg.get("qdrant_port", 6333)
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.get(f"http://{qh}:{qp}/healthz")
-                r.raise_for_status()
-                rc = await client.get(
-                    f"http://{qh}:{qp}/collections/{mem0_cfg.get('collection_name', 'secretary_memory')}"
-                )
-                detail = "collection exists" if rc.status_code == 200 else "collection missing (auto-created on first use)"
-                report("qdrant", True, detail)
-        except Exception as exc:
-            report("qdrant", False, str(exc)[:100])
-
         try:
             tracker = TaskTracker(config)
             pid = await tracker.ensure_project()

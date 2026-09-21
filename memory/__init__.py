@@ -70,10 +70,12 @@ class MemoryStore:
         meta = metadata or {}
         mem_type = meta.get("type", "observation")
         now = datetime.now(timezone.utc).isoformat()
+        node_id = f"secretary:{memory_id}"
+        fact_key = f"secretary:{memory_id}"
+        fact_value = text
 
         try:
             # Insert as a node (general memory)
-            node_id = f"secretary:{memory_id}"
             self._mm_conn.execute(
                 """INSERT OR REPLACE INTO nodes
                    (id, name, kind, summary, created_at, updated_at, importance)
@@ -91,12 +93,8 @@ class MemoryStore:
 
             # If it's a fact-like memory, also store in facts table
             if mem_type in ("extracted_fact", "stale_task_alert") or text.startswith("[fact]"):
-                fact_key = f"secretary:{memory_id}"
-                fact_value = text
-                # Try to extract a key from the text
                 if ": " in text[:200]:
                     fact_key = text.split(": ", 1)[0].strip().lower().replace(" ", "_")
-                    fact_value = text
                 self._mm_conn.execute(
                     """INSERT OR REPLACE INTO facts
                        (key, value, source, confidence, updated_at)
@@ -111,6 +109,44 @@ class MemoryStore:
                 )
 
             self._mm_conn.commit()
+        except sqlite3.OperationalError:
+            # DB locked — retry once after a short sleep
+            logger.debug("Megamemory DB locked, retrying in 100ms")
+            import time
+            time.sleep(0.1)
+            try:
+                self._mm_conn.execute(
+                    """INSERT OR REPLACE INTO nodes
+                       (id, name, kind, summary, created_at, updated_at, importance)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        node_id,
+                        text[:120],
+                        "feature" if mem_type == "session_summary" else "pattern",
+                        text,
+                        now,
+                        now,
+                        0.5,
+                    ),
+                )
+                if mem_type in ("extracted_fact", "stale_task_alert") or text.startswith("[fact]"):
+                    if ": " in text[:200]:
+                        fact_key = text.split(": ", 1)[0].strip().lower().replace(" ", "_")
+                    self._mm_conn.execute(
+                        """INSERT OR REPLACE INTO facts
+                           (key, value, source, confidence, updated_at)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (
+                            fact_key,
+                            fact_value,
+                            "secretary",
+                            0.8,
+                            now,
+                        ),
+                    )
+                self._mm_conn.commit()
+            except Exception:
+                logger.debug("Megamemory write retry failed", exc_info=True)
         except Exception:
             logger.debug("Megamemory write failed", exc_info=True)
 
@@ -118,6 +154,8 @@ class MemoryStore:
         """Search megamemory nodes via FTS5."""
         if not self._mm_conn:
             return []
+        # Sanitize FTS5 special chars: " * : ( ) -
+        sanitized = query.replace('"', '').replace('*', '').replace(':', '').replace('(', '').replace(')', '').replace('-', ' ')
         try:
             # Use FTS5 for text search
             rows = self._mm_conn.execute(
@@ -127,7 +165,7 @@ class MemoryStore:
                    WHERE nodes_fts MATCH ?
                    ORDER BY rank
                    LIMIT ?""",
-                (query, top_k),
+                (sanitized, top_k),
             ).fetchall()
             return [
                 {
@@ -135,6 +173,27 @@ class MemoryStore:
                     "memory": r[2],
                     "metadata": {"kind": r[3], "source": "megamemory"},
                     "score": abs(r[4]) if r[4] else 0.5,
+                }
+                for r in rows
+            ]
+        except sqlite3.OperationalError:
+            # FTS5 failed (e.g. DB locked); fall back to LIKE
+            logger.debug("Megamemory FTS search failed, falling back to LIKE", exc_info=True)
+            like_pattern = f"%{query}%"
+            rows = self._mm_conn.execute(
+                """SELECT n.id, n.name, n.summary, n.kind, 0 as rank
+                   FROM nodes n
+                   WHERE n.name LIKE ? OR n.summary LIKE ?
+                   ORDER BY rank
+                   LIMIT ?""",
+                (like_pattern, like_pattern, top_k),
+            ).fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "memory": r[2],
+                    "metadata": {"kind": r[3], "source": "megamemory"},
+                    "score": 0.5,
                 }
                 for r in rows
             ]
@@ -154,7 +213,11 @@ class MemoryStore:
             self._memories = []
 
     def _save(self) -> None:
-        self._path.write_text(json.dumps(self._memories, indent=2, default=str))
+        """Atomically write memories to local JSON to prevent corrupt file on crash."""
+        data = json.dumps(self._memories, indent=2, default=str)
+        tmp = self._path.with_suffix(".tmp")
+        tmp.write_text(data)
+        tmp.replace(self._path)
 
     # ── public API ──────────────────────────────────────────────
 
