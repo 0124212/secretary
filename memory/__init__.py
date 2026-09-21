@@ -83,6 +83,7 @@ class MemoryStore:
             self._mm_conn.execute("PRAGMA journal_mode=WAL")
             self._mm_conn.execute("PRAGMA busy_timeout=3000")
             logger.debug("Connected to megamemory DB")
+            self._mm_ensure_versions_table()
         except Exception:
             logger.debug("Could not open megamemory DB", exc_info=True)
             self._mm_conn = None
@@ -194,9 +195,11 @@ class MemoryStore:
         except Exception:
             has_embedding = False
 
+        # Sanitize FTS5 special chars (always computed)
+        sanitized = query.replace('"', '').replace('*', '').replace(':', '').replace('(', '').replace(')', '').replace('-', ' ')
+
         if has_embedding and HAS_NUMPY:
             # Cosine-similarity search path alongside FTS5
-            sanitized = query.replace('"', '').replace('*', '').replace(':', '').replace('(', '').replace(')', '').replace('-', ' ')
             try:
                 # FTS5 first
                 rows = self._mm_conn.execute(
@@ -434,10 +437,11 @@ class MemoryStore:
                 return m
         return None
 
-    def update(self, memory_id: str, data: str) -> dict | None:
+def update(self, memory_id: str, data: str) -> dict | None:
         """Update a memory's content."""
         for m in self._memories:
             if m.get("id") == memory_id:
+                old_memory = m.get("memory", "")
                 m["memory"] = data
                 m["updated_at"] = datetime.now(timezone.utc).isoformat()
                 self._save()
@@ -447,13 +451,25 @@ class MemoryStore:
                         self._mm_conn.execute(
                             """UPDATE nodes
                                SET summary = ?, updated_at = ?
-                             WHERE id = ?""",
+                            WHERE id = ?""",
                             (data, datetime.now(timezone.utc).isoformat(),
                              f"secretary:{memory_id}"),
                         )
                         self._mm_conn.commit()
                 except Exception:
                     logger.debug("Megamemory mirror update failed", exc_info=True)
+                # Record in version table
+                try:
+                    if self._mm_conn:
+                        self._mm_ensure_versions_table()
+                        self._mm_conn.execute(
+                            """INSERT INTO memory_versions (memory_id, old_content, new_content, updated_at)
+                               VALUES (?, ?, ?, ?)""",
+                            (memory_id, old_memory, data, datetime.now(timezone.utc).isoformat()),
+                        )
+                        self._mm_conn.commit()
+                except Exception:
+                    logger.debug("Megamemory version record failed", exc_info=True)
                 return m
         return None
 
@@ -476,10 +492,44 @@ class MemoryStore:
         except Exception:
             logger.debug("Megamemory mirror delete failed", exc_info=True)
 
+    def _mm_ensure_versions_table(self) -> None:
+        """Create the memory_versions table if it doesn't exist."""
+        if not self._mm_conn:
+            return
+        try:
+            self._mm_conn.execute(
+                """CREATE TABLE IF NOT EXISTS memory_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    memory_id TEXT NOT NULL,
+                    old_content TEXT NOT NULL,
+                    new_content TEXT NOT NULL,
+                    updated_at TEXT DEFAULT (datetime('now'))
+                )"""
+            )
+            self._mm_conn.commit()
+        except Exception:
+            logger.debug("Could not create memory_versions table", exc_info=True)
+
     def history(self, memory_id: str) -> list[dict]:
-        """Get change history (stub — local store has no versioning)."""
-        m = self.get(memory_id)
-        return [m] if m else []
+        """Get change history from the append-only version table."""
+        if not self._mm_conn:
+            return []
+        self._mm_ensure_versions_table()
+        try:
+            rows = self._mm_conn.execute(
+                """SELECT memory_id, old_content, new_content, updated_at
+                   FROM memory_versions
+                   WHERE memory_id = ?
+                   ORDER BY updated_at DESC""",
+                (memory_id,),
+            ).fetchall()
+            return [
+                {"old_content": r[1], "new_content": r[2], "updated_at": r[3]}
+                for r in rows
+            ]
+        except Exception:
+            logger.debug("Megamemory version query failed", exc_info=True)
+            return []
 
     def close(self) -> None:
         """Persist to disk and close megamemory connection."""
